@@ -1,0 +1,87 @@
+==================== IMPOSSIBLE_PASSWORD {HACKTHEBOX} ====================
+
+
+
+* symbols are stripped from binary, use objdump to find where to place breaks
+
+* make the binary executable and run it with gdb
+
+* objdump shows a few fcn defs, and a large .text section
+
+* looks like strcmp function jumps in at 0x400630 (set a breakpoint here)!
+
+* theres instructions for scanf (user input) and putchar @ 0x40065b! 
+
+  4008ce:	e8 2d fd ff ff       	callq  400600 <printf@plt>				<--
+  4008d3:	48 8d 45 e0          	lea    -0x20(%rbp),%rax
+  4008d7:	48 89 c6             	mov    %rax,%rsi
+  4008da:	bf 82 0a 40 00       	mov    $0x400a82,%edi
+  4008df:	b8 00 00 00 00       	mov    $0x0,%eax
+  4008e4:	e8 87 fd ff ff       	callq  400670 <__isoc99_scanf@plt>		<--21t Scanf
+  4008e9:	48 8d 45 e0          	lea    -0x20(%rbp),%rax
+  4008ed:	48 89 c6             	mov    %rax,%rsi
+  4008f0:	bf 87 0a 40 00       	mov    $0x400a87,%edi
+  4008f5:	b8 00 00 00 00       	mov    $0x0,%eax
+  4008fa:	e8 01 fd ff ff       	callq  400600 <printf@plt>				<--
+  4008ff:	48 8b 55 f8          	mov    -0x8(%rbp),%rdx
+  400903:	48 8d 45 e0          	lea    -0x20(%rbp),%rax
+  400907:	48 89 d6             	mov    %rdx,%rsi
+  40090a:	48 89 c7             	mov    %rax,%rdi
+  40090d:	e8 1e fd ff ff       	callq  400630 <strcmp@plt>				<--
+  400912:	89 45 f4             	mov    %eax,-0xc(%rbp)
+  400915:	83 7d f4 00          	cmpl   $0x0,-0xc(%rbp)
+  400919:	74 0a                	je     400925 <rand@plt+0x295>
+  40091b:	bf 01 00 00 00       	mov    $0x1,%edi
+  400920:	e8 5b fd ff ff       	callq  400680 <exit@plt>				<--
+  400925:	bf 8d 0a 40 00       	mov    $0x400a8d,%edi
+  40092a:	b8 00 00 00 00       	mov    $0x0,%eax
+  40092f:	e8 cc fc ff ff       	callq  400600 <printf@plt>				<--
+  400934:	48 8d 45 e0          	lea    -0x20(%rbp),%rax
+  400938:	48 89 c6             	mov    %rax,%rsi
+  40093b:	bf 82 0a 40 00       	mov    $0x400a82,%edi
+  400940:	b8 00 00 00 00       	mov    $0x0,%eax
+  400945:	e8 26 fd ff ff       	callq  400670 <__isoc99_scanf@plt>		<-- 2nd Scanf
+  40094a:	bf 14 00 00 00       	mov    $0x14,%edi
+  40094f:	e8 39 fe ff ff       	callq  40078d <rand@plt+0xfd>
+  400954:	48 89 c2             	mov    %rax,%rdx
+  400957:	48 8d 45 e0          	lea    -0x20(%rbp),%rax
+  40095b:	48 89 d6             	mov    %rdx,%rsi                        <-- random pwd in rsi here
+  40095e:	48 89 c7             	mov    %rax,%rdi						<--
+  400961:	e8 ca fc ff ff       	callq  400630 <strcmp@plt>				<-- random pwd in rdx here
+  400966:	85 c0                	test   %eax,%eax						<--
+  400968:	75 0c                	jne    400976 <rand@plt+0x2e6>
+  40096a:	48 8d 45 c0          	lea    -0x40(%rbp),%rax
+  40096e:	48 89 c7             	mov    %rax,%rdi
+  400971:	e8 02 00 00 00       	callq  400978 <rand@plt+0x2e8>
+  400976:	c9                   	leaveq 
+  400977:	c3                   	retq   
+
+* examine the RSI register with gdb: x/s %rsi
+This shows that the string being held is: "SuperSeKretKey"
+
+After entering this key, a second prompt appears. examing %rsi again we find the
+following string loaded: "we@Ma.T$W8GoFJrW7WC(" or "m,!C;HTkVNi)lo^;$fwt"
+The only problem is... it's random! The second password seems to be loaded into 
+eax for comparison at 
+========================================================
+Ok, so it's frustrating bc you can only see the second password after it's too late. 
+What's interesting is that the first password check doesn't correctly check for
+a buffer overflow, so by supplying the 14 Characters in "SuperSeKretKey", adding 6
+spaces and then writing more you can effectively skip the first check.
+
+^ This has made it so I can see the randomly generated string, but I'm jumping past
+the point I can enter it now directly to comparison (which is with original input).......
+============================================================
+Next Approach.... 
+* want to change the jump not equal @ 400968:	75 0c jne  400976 <rand@plt+0x2e6>
+
+* Find exact instructions by looking at this spot in memory using gdb: x/8x 0x400968 
+
+* jne is 0x75, so really just want to change instruction to je (74)
+
+* hexdump the binary and grep for the 8 word byte pattern we want (in this case 75 0c 48 8d 45 c0 48 89)
+
+*$ hexdump -C impossible | grep '75 0c 48'
+00000960  c7 e8 ca fc ff ff 85 c0  75 0c 48 8d 45 c0 48 89  |........u.H.E.H.|
+
+use vim to change the 75 to a 74!
